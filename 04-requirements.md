@@ -60,7 +60,9 @@ where the work actually is, so that I do not re-file the same issue.
 - Given an open capital-track report, when the resident checks status, then it
   shows the current honest state (Assessed / Queued / Scheduled), not "Open."
 - Given a report already on the capital track, when the same resident attempts a
-  duplicate, then the existing report and its honest status are surfaced first.
+  duplicate, then existing candidate reports are surfaced as a suggestion for the
+  resident to confirm — geospatial-first, assistive not automatic (see §6 for the
+  feasibility test that set this design).
 
 **US-3 — Program manager holds district capacity targets**
 As the program manager, I want district-level capacity targets for schedulable
@@ -95,16 +97,74 @@ genuinely dangerous defect is not buried by a long default timeline.
 - **Status-language approval:** honest states are politically sensitive; comms
   and council sign-off on the exact wording is a dependency, not an assumption.
 
-## 6. Out of Scope
+## 6. Feasibility test: can duplicate detection (US-2) actually be built?
+
+US-2's second acceptance criterion — "surface the existing report when a
+resident attempts a duplicate" — assumes duplicate detection works. Before
+committing to it, I ran a feasibility eval against the city's own duplicate
+labels (`05-dedup-eval/`, ground truth = `service_request_parent_id`). The
+result **changed the requirement**, which is what a feasibility test is for.
+
+**What the eval found** (120 known sidewalk duplicates, LLM matcher shown a
+geo-filtered shortlist with the true parent guaranteed present):
+
+| slice | recall | reading |
+|---|---|---|
+| easy (same address / identical text) | 62% | a string/geo match would also catch these |
+| **hard (paraphrased, different wording)** | **22%** | the cases that need real matching — and the real result |
+| false-positive on non-duplicates | 12% | the review-burden cost of over-flagging |
+
+**Why it's low — and why that's the finding, not a model failure.** Reading the
+misses, the hard pairs are genuinely underdetermined by text: "Sidewalk and
+even/hole" vs. "Cracked and bulging sidewalk"; "Lifted City sidewalk repair
+request" vs. "uneven lifting making it difficult for a mobility scooter." A
+human reviewer couldn't confidently call these duplicates from the descriptions
+either — they're the same *generic complaint type* that could be one panel or
+two a block apart. The city merged them using a field inspector's location
+knowledge the text doesn't carry. Performance tracks whether the **data**
+contains the answer (62% when address/text does) not whether the model is clever
+(22% when it doesn't). **Sidewalk dedup is a location problem, not a text
+problem.**
+
+**What this changes in the requirement:**
+
+- **US-2 duplicate detection is re-scoped from text-similarity to
+  geospatial-first.** Cluster candidate duplicates by lat/lng + service type;
+  use an LLM only as a secondary tiebreaker *within a tight radius*, where the
+  candidate set is small and the 12% false-positive cost is bounded. Do not
+  build text-similarity dedup as the primary mechanism — the eval shows text is
+  the wrong signal.
+- **Duplicate detection is assistive, never autonomous.** At 22% hard-recall and
+  12% false-positives, auto-merging would both miss most real duplicates and
+  wrongly merge distinct reports (merging two different residents' hazards is a
+  worse failure than a missed merge). The feature surfaces *candidates as a
+  suggestion* to a human — at intake to the resident ("is this your issue?") and
+  in triage to an agent — who confirms. The human stays in the loop *because of*
+  these numbers, not as a default.
+- **Revised acceptance criterion for US-2 dedup:** given a new structural-infra
+  report, when a prior report exists within [radius] filed within [window] for
+  the same service type, then up to N candidates are surfaced to the resident as
+  a suggestion; the resident's confirm/dismiss is logged to measure real-world
+  precision over time. No automatic merge.
+
+*Scope of the test: measures recall against duplicates the city already caught,
+single run of ~120 cases, true parent guaranteed in the shortlist (isolating the
+match decision from pre-filter recall). Directional, not a certified benchmark —
+enough to redirect the design, not to set a final threshold. Full method and the
+honest caveats are in [`05-dedup-eval/results.md`](05-dedup-eval/results.md).*
+
+## 7. Out of Scope
 
 - **Securing capital budget** — a council/finance matter this process change
   makes visible but cannot solve.
 - **The consumable categories** (illegal dumping, graffiti, missed collection),
   which already resolve same-day and need no change.
-- **Cross-channel duplicate detection at submission** — a real secondary finding
-  (mobile intake is ~26% duplicate-or-referred) but a separate initiative.
+- **Cross-channel duplicate detection at submission** — mobile intake is ~26%
+  duplicate-or-referred, a real secondary finding. The *sidewalk* dupe case is
+  addressed in §6; generalizing dedup across all channels and categories is a
+  separate initiative.
 
-## 7. Success Metrics
+## 8. Success Metrics
 
 | Metric | Definition | Baseline (2025) | Target |
 |---|---|---|---|
