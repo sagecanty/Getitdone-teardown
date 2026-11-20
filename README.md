@@ -4,7 +4,7 @@ A business-analysis engagement on real municipal data: San Diego's 311 service
 requests (Get It Done program, 12-month window: 2025 closed reports + current
 open backlog). Not a dashboard — a decision.
 
-**Deliverables:** [Problem framing](01-problem-framing.md) · [Decision memo](03-decision-memo.md) · [Requirements (lite BRD)](04-requirements.md) · [Analysis (SQL + Python)](02-analysis/)
+**Deliverables:** [Problem framing](01-problem-framing.md) · [Decision memo](03-decision-memo.md) · [Requirements (lite BRD)](04-requirements.md) · [Analysis (SQL + Python)](02-analysis/) · [LLM dedup eval](05-dedup-eval/results.md)
 
 **Stack:** Python · DuckDB / SQL (analysis) · Claude + Copilot (AI-assisted)
 
@@ -32,6 +32,23 @@ Districts 2 and 7. Not "triage harder": the fix is ending the misleading "open"
 label on multi-year work, paired with a measurable service commitment where the
 disparity is worst.
 
+## AI evaluation & risk: can an LLM safely say "already reported"?
+
+The requirements assumed an AI feature: detect duplicate reports at intake and
+tell the resident. Before committing to it, I evaluated an LLM matcher against
+the city's own duplicate labels ([05-dedup-eval/](05-dedup-eval/results.md)).
+**The eval changed the design**: from text-similarity matching to
+geospatial-first, and from automatic merging to suggestions a human confirms
+([requirements §6](04-requirements.md#6-feasibility-test-can-duplicate-detection-us-2-actually-be-built)).
+
+| AI risk | How it was tested | Result → decision |
+|---|---|---|
+| **Easy cases inflate the headline** | Easy (same address / identical text) and hard (paraphrased) slices scored separately | 62% vs **22%** recall. The model mostly finds what a string match would; text is the wrong signal for this problem |
+| **Wrongly merging two residents' reports** | Wrong-match rate on known duplicates; false-positive rate on 40 non-duplicate controls | 18% wrong-match, 12% false positives. A bad merge silently closes someone's hazard, so **no automatic merge** |
+| **Autonomy beyond what the evidence supports** | Error profile above | Human in the loop *because of* these numbers: candidates are suggested, a person confirms |
+| **Offline eval ≠ production** | True parent injected into the shortlist to isolate the match decision; end-to-end recall stated as this × pre-filter recall | Acceptance criterion logs every confirm/dismiss to **measure real precision after launch** |
+| **Personal data in eval artifacts** | Free-text reviewed before persisting | Phone numbers redacted from `pairs.csv` |
+
 ## What's in this repo
 
 | Artifact | What it shows |
@@ -40,6 +57,7 @@ disparity is worst.
 | [02-analysis/](02-analysis/) | SQL (DuckDB) + Python. Queries are the analysis, not decoration |
 | [03-decision-memo.md](03-decision-memo.md) | 1-2 page exec memo: findings → recommendation → tradeoffs |
 | [04-requirements.md](04-requirements.md) | Lite BRD for the recommended change: as-is/to-be, user stories, acceptance criteria, edge cases |
+| [05-dedup-eval/](05-dedup-eval/) | LLM duplicate-matching eval against the city's own labels: easy/hard slices, control set, wrong-match and false-positive rates |
 | [scripts/verify_data.py](scripts/verify_data.py) | Data validation gate — analysis output is untrusted until this passes |
 
 ## A note on how this was built
